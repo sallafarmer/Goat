@@ -1,0 +1,467 @@
+
+def rgb2hsv(rgb):
+    """RGB to HSV color space conversion.
+
+    Parameters
+    ----------
+    rgb : array_like
+        The image in RGB format, in a 3-D array of shape ``(.., .., 3)``.
+
+    Returns
+    -------
+    out : ndarray
+        The image in HSV format, in a 3-D array of shape ``(.., .., 3)``.
+
+    Raises
+    ------
+    ValueError
+        If `rgb` is not a 3-D array of shape ``(.., .., 3)``.
+
+    Notes
+    -----
+    Conversion between RGB and HSV color spaces results in some loss of
+    precision, due to integer arithmetic and rounding [1]_.
+
+    References
+    ----------
+    .. [1] http://en.wikipedia.org/wiki/HSL_and_HSV
+
+    Examples
+    --------
+    >>> from skimage import color
+    >>> from skimage import data
+    >>> img = data.astronaut()
+    >>> img_hsv = color.rgb2hsv(img)
+    """
+    arr = _prepare_colorarray(rgb)
+    out = np.empty_like(arr)
+
+    # -- V channel
+    out_v = arr.max(-1)
+
+    # -- S channel
+    delta = arr.ptp(-1)
+    # Ignore warning for zero divided by zero
+    old_settings = np.seterr(invalid='ignore')
+    out_s = delta / out_v
+    out_s[delta == 0.] = 0.
+
+    # -- H channel
+    # red is max
+    idx = (arr[:, :, 0] == out_v)
+    out[idx, 0] = (arr[idx, 1] - arr[idx, 2]) / delta[idx]
+
+    # green is max
+    idx = (arr[:, :, 1] == out_v)
+    out[idx, 0] = 2. + (arr[idx, 2] - arr[idx, 0]) / delta[idx]
+
+    # blue is max
+    idx = (arr[:, :, 2] == out_v)
+    out[idx, 0] = 4. + (arr[idx, 0] - arr[idx, 1]) / delta[idx]
+    out_h = (out[:, :, 0] / 6.) % 1.
+    out_h[delta == 0.] = 0.
+
+    np.seterr(**old_settings)
+
+    # -- output
+    out[:, :, 0] = out_h
+    out[:, :, 1] = out_s
+    out[:, :, 2] = out_v
+
+    # remove NaN
+    out[np.isnan(out)] = 0
+
+    return out
+
+
+def rgb2xyz(rgb):
+    """RGB to XYZ color space conversion.
+
+    Parameters
+    ----------
+    rgb : array_like
+        The image in RGB format, in a 3- or 4-D array of shape
+        ``(.., ..,[ ..,] 3)``.
+
+    Returns
+    -------
+    out : ndarray
+        The image in XYZ format, in a 3- or 4-D array of shape
+        ``(.., ..,[ ..,] 3)``.
+
+    Raises
+    ------
+    ValueError
+        If `rgb` is not a 3- or 4-D array of shape ``(.., ..,[ ..,] 3)``.
+
+    Notes
+    -----
+    The CIE XYZ color space is derived from the CIE RGB color space. Note
+    however that this function converts from sRGB.
+
+    References
+    ----------
+    .. [1] http://en.wikipedia.org/wiki/CIE_1931_color_space
+
+    Examples
+    --------
+    >>> from skimage import data
+    >>> img = data.astronaut()
+    >>> img_xyz = rgb2xyz(img)
+    """
+    # Follow the algorithm from http://www.easyrgb.com/index.php
+    # except we don't multiply/divide by 100 in the conversion
+    arr = _prepare_colorarray(rgb).copy()
+    mask = arr > 0.04045
+    arr[mask] = np.power((arr[mask] + 0.055) / 1.055, 2.4)
+    arr[~mask] /= 12.92
+    return _convert(xyz_from_rgb, arr)
+
+
+
+def xyz2lab(xyz, illuminant="D65", observer="2"):
+    """XYZ to CIE-LAB color space conversion.
+
+    Parameters
+    ----------
+    xyz : array_like
+        The image in XYZ format, in a 3- or 4-D array of shape
+        ``(.., ..,[ ..,] 3)``.
+    illuminant : {"A", "D50", "D55", "D65", "D75", "E"}, optional
+        The name of the illuminant (the function is NOT case sensitive).
+    observer : {"2", "10"}, optional
+        The aperture angle of the observer.
+
+    Returns
+    -------
+    out : ndarray
+        The image in CIE-LAB format, in a 3- or 4-D array of shape
+        ``(.., ..,[ ..,] 3)``.
+
+    Raises
+    ------
+    ValueError
+        If `xyz` is not a 3-D array of shape ``(.., ..,[ ..,] 3)``.
+    ValueError
+        If either the illuminant or the observer angle is unsupported or
+        unknown.
+
+    Notes
+    -----
+    By default Observer= 2A, Illuminant= D65. CIE XYZ tristimulus values
+    x_ref=95.047, y_ref=100., z_ref=108.883. See function `get_xyz_coords` for
+    a list of supported illuminants.
+
+    References
+    ----------
+    .. [1] http://www.easyrgb.com/index.php?X=MATH&H=07#text7
+    .. [2] http://en.wikipedia.org/wiki/Lab_color_space
+
+    Examples
+    --------
+    >>> from skimage import data
+    >>> from skimage.color import rgb2xyz, xyz2lab
+    >>> img = data.astronaut()
+    >>> img_xyz = rgb2xyz(img)
+    >>> img_lab = xyz2lab(img_xyz)
+    """
+    arr = _prepare_colorarray(xyz)
+
+    xyz_ref_white = get_xyz_coords(illuminant, observer)
+
+    # scale by CIE XYZ tristimulus values of the reference white point
+    arr = arr / xyz_ref_white
+
+    # Nonlinear distortion and linear transformation
+    mask = arr > 0.008856
+    arr[mask] = np.power(arr[mask], 1. / 3.)
+    arr[~mask] = 7.787 * arr[~mask] + 16. / 116.
+
+    x, y, z = arr[..., 0], arr[..., 1], arr[..., 2]
+
+    # Vector scaling
+    L = (116. * y) - 16.
+    a = 500.0 * (x - y)
+    b = 200.0 * (y - z)
+
+    return np.concatenate([x[..., np.newaxis] for x in [L, a, b]], axis=-1)
+
+def rgb2lab(rgb, illuminant="D65", observer="2"):
+    """RGB to lab color space conversion.
+
+    Parameters
+    ----------
+    rgb : array_like
+        The image in RGB format, in a 3- or 4-D array of shape
+        ``(.., ..,[ ..,] 3)``.
+    illuminant : {"A", "D50", "D55", "D65", "D75", "E"}, optional
+        The name of the illuminant (the function is NOT case sensitive).
+    observer : {"2", "10"}, optional
+        The aperture angle of the observer.
+
+    Returns
+    -------
+    out : ndarray
+        The image in Lab format, in a 3- or 4-D array of shape
+        ``(.., ..,[ ..,] 3)``.
+
+    Raises
+    ------
+    ValueError
+        If `rgb` is not a 3- or 4-D array of shape ``(.., ..,[ ..,] 3)``.
+
+    References
+    ----------
+    .. [1] https://en.wikipedia.org/wiki/Standard_illuminant
+
+    Notes
+    -----
+    This function uses rgb2xyz and xyz2lab.
+    By default Observer= 2A, Illuminant= D65. CIE XYZ tristimulus values
+    x_ref=95.047, y_ref=100., z_ref=108.883. See function `get_xyz_coords` for
+    a list of supported illuminants.
+    """
+    return xyz2lab(rgb2xyz(rgb), illuminant, observer)
+
+
+
+
+def dstack(tup):
+    """
+    Stack arrays in sequence depth wise (along third axis).
+
+    This is equivalent to concatenation along the third axis after 2-D arrays
+    of shape `(M,N)` have been reshaped to `(M,N,1)` and 1-D arrays of shape
+    `(N,)` have been reshaped to `(1,N,1)`. Rebuilds arrays divided by
+    `dsplit`.
+
+    This function makes most sense for arrays with up to 3 dimensions. For
+    instance, for pixel-data with a height (first axis), width (second axis),
+    and r/g/b channels (third axis). The functions `concatenate`, `stack` and
+    `block` provide more general stacking and concatenation operations.
+
+    Parameters
+    ----------
+    tup : sequence of arrays
+        The arrays must have the same shape along all but the third axis.
+        1-D or 2-D arrays must have the same shape.
+
+    Returns
+    -------
+    stacked : ndarray
+        The array formed by stacking the given arrays, will be at least 3-D.
+
+    See Also
+    --------
+    stack : Join a sequence of arrays along a new axis.
+    vstack : Stack along first axis.
+    hstack : Stack along second axis.
+    concatenate : Join a sequence of arrays along an existing axis.
+    dsplit : Split array along third axis.
+
+    Examples
+    --------
+    >>> a = np.array((1,2,3))
+    >>> b = np.array((2,3,4))
+    >>> np.dstack((a,b))
+    array([[[1, 2],
+            [2, 3],
+            [3, 4]]])
+
+    >>> a = np.array([[1],[2],[3]])
+    >>> b = np.array([[2],[3],[4]])
+    >>> np.dstack((a,b))
+    array([[[1, 2]],
+           [[2, 3]],
+           [[3, 4]]])
+
+    """
+    return _nx.concatenate([atleast_3d(_m) for _m in tup], 2)
+
+
+def getAllColorSpaceBands(original_bands, source):
+
+
+    try:
+        reference_image = original_bands['red'].copy()
+        image_red = original_bands['red'].copy() / 65535.0
+        image_red[np.isnan(image_red)] = 0
+
+        if len(image_red[image_red<0])!=0 or len(image_red[image_red>1])!=0:
+            status = 400
+            error_message = "error: red band values are not between 0 and 65535!"
+            return None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, status, error_message
+
+
+    try:
+        image_bgr = np.dstack((image_red, image_green, image_blue))
+        ret_bgr = image_bgr.copy()
+        # ret_bgr = exposure.adjust_log(ret_bgr)
+        ret_bgr = exposure.equalize_adapthist(ret_bgr, clip_limit=0.04)
+
+        hsv = rgb2hsv(image_bgr)
+        image_h = hsv[:, :, 0]
+        image_s = hsv[:, :, 1]
+        image_v = hsv[:, :, 2]
+
+        lab = rgb2lab(image_bgr)
+        image_l = lab[:, :, 0]
+        image_a = lab[:, :, 1]
+        image_b = lab[:, :, 2]
+
+        xyz = rgb2xyz(image_bgr)
+        image_x = xyz[:, :, 0]
+        image_y = xyz[:, :, 1]
+        image_z = xyz[:, :, 2]
+
+        clab = xyz2lab(xyz)
+        image_cl = clab[:, :, 0]
+        image_ca = clab[:, :, 1]
+        image_cb = clab[:, :, 2]
+    except:
+        status = 500
+        error_message = traceback.format_exc()
+        return None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, status, error_message
+
+    return ret_bgr, reference_image, image_red, image_green, image_blue, image_nir, \
+           image_h, image_s, image_v, image_ndvi, image_l, image_a, image_b, image_x, image_y, image_z, \
+           image_cl, image_ca, image_cb, image_rededge, image_component0, image_component1, status, error_message
+
+
+
+
+
+class SegmentationBasedCloudMask(CloudMaskGenerator):
+
+    numOfSuperpixels = 200
+    numOfModels = 10
+    ModelFileName = None
+
+    def superPixelCluster(self, color_image):
+        image = color_image.copy()
+        # segments = slic(image, n_segments=self.numOfSuperpixels, sigma=3)
+        gradient = sobel(rgb2gray(image))
+        segments = watershed(gradient, markers=self.numOfSuperpixels, compactness=0.001)
+        return segments
+
+    def NANregionFlag(self, reference_image, cluster_segments, cluster_num):
+        data = reference_image[cluster_segments == cluster_num]
+        if len(data[~np.isnan(data)]) == 0:
+            return 1
+        return 0
+
+    def generateMask(self, bands, source):
+        if 'service' not in source:
+            raise Exception('source object does not contain the \'service\' key')
+
+        if source['service'] == 'RapidEye':
+            self.ModelFileName = 'rapid_eye_mlp'
+            pass
+        elif source['service'] == 'PlanetScope':
+            self.ModelFileName = 'dove_mlp'
+            pass
+        else:
+            raise Exception('service ' + source['service'] + ' is not supported at this time')
+
+
+        if 'AcquisitionDate' not in source:
+            status_message = "AcquisitionDate not found in the source dictionary!"
+            raise Exception(status_message)
+
+        imageDate = source['AcquisitionDate']
+        if isinstance(imageDate, datetime.datetime) == False:
+            status_message = "AcquisitionDate in the source dictionary is not a datetime object!"
+            raise Exception(status_message)
+
+        color_image, reference_image, image_red, image_green, image_blue, image_nir,\
+        image_h, image_s, image_v, image_ndvi, image_l, image_a, image_b, image_x, \
+        image_y, image_z, image_cl, image_ca, image_cb, image_rededge, image_component0, \
+        image_component1, status, status_message = getAllColorSpaceBands(bands, source['service'])
+
+        if status != 200:
+            raise Exception(status_message)
+
+
+        cluster_segments = self.superPixelCluster(color_image)
+        no_of_clusters = np.max(cluster_segments)
+
+        row, col = cluster_segments.shape
+
+        resultMask = np.zeros((row, col))
+        merge_flag = 0
+        cluster_list = []
+
+        for cluster_num in range(0, no_of_clusters):
+            if self.NANregionFlag(reference_image, cluster_segments, cluster_num) == 1:
+                continue
+            cluster_list.append(cluster_num)
+
+
+        all_testdf = extractFeatures(reference_image, cluster_segments, cluster_list, image_red, image_green,
+                                 image_blue, image_nir, image_h, image_s, image_v, image_ndvi,
+                                 image_l, image_a, image_b, image_x, image_y, image_z, image_cl, image_ca, image_cb,
+                                 image_rededge, image_component0, image_component1, imageDate, source['service'])
+        all_testdf = all_testdf.sort_index(axis=1)
+        test = all_testdf.values
+        test = np.nan_to_num(test)
+        no_of_test_cases = len(cluster_list)
+
+        preds_cloud = np.zeros(no_of_test_cases)
+        preds_shadow = np.zeros(no_of_test_cases)
+        preds_crop = np.zeros(no_of_test_cases)
+
+
+        clf = []
+        for model_num in range(0, self.numOfModels):
+            modelpath = os.path.join(os.path.dirname(__file__), self.ModelFileName + "_" + str(model_num) + ".model")
+            clf.append(pickle.load(open(modelpath, "r")))
+
+        for model_num in range(0, self.numOfModels):
+            pred = clf[model_num].predict(test)
+
+            for z in range(0, len(pred)):
+                if pred[z] == "crop":
+                    preds_crop[z] += 1
+                elif pred[z] == "cloud":
+                    preds_cloud[z] += 1
+                else:
+                    preds_shadow[z] += 1
+
+        final_preds = []
+        for z in range(0, no_of_test_cases):
+            if preds_crop[z] > preds_cloud[z] and preds_crop[z] > preds_shadow[z]:
+                final_preds.append('crop')
+            elif preds_cloud[z] > preds_crop[z] and preds_cloud[z] > preds_shadow[z]:
+                final_preds.append('cloud')
+            else:
+                final_preds.append('shadow')
+
+        for z in range(0, no_of_test_cases):
+            if final_preds[z] == 'crop':
+                replaceVal = 0
+            elif final_preds[z] == 'shadow':
+                replaceVal = 127
+            else:
+                replaceVal = 255
+
+            cluster_indx = np.where(cluster_segments == cluster_list[z])
+            resultMask[cluster_indx[0], cluster_indx[1]] = replaceVal
+
+        nan_indx = np.where(np.isnan(reference_image))
+        resultMask[nan_indx[0], nan_indx[1]] = 0
+
+
+        cloud_mask = CloudMask()
+        cloud_mask.cloudLayer = resultMask.copy()
+        cloud_mask.cloudLayer[cloud_mask.cloudLayer==127] = 0
+        cloud_mask.cloudLayer[cloud_mask.cloudLayer == 255] = 1
+        cloud_mask.cloudLayer = binary_opening(cloud_mask.cloudLayer)
+        cloud_mask.cloudLayer = binary_closing(cloud_mask.cloudLayer)
+
+        cloud_mask.shadowLayer = resultMask.copy()
+        cloud_mask.shadowLayer[cloud_mask.shadowLayer == 127] = 1
+        cloud_mask.shadowLayer[cloud_mask.shadowLayer == 255] = 0
+        cloud_mask.shadowLayer = binary_opening(cloud_mask.shadowLayer)
+        cloud_mask.shadowLayer = binary_closing(cloud_mask.shadowLayer)
+
+        return cloud_mask

@@ -121,14 +121,14 @@ zoneMapFile3 = "../data/(controller)_2017-09-13-2017-09-28__297113__Harvest/2017
 tiffFile = "../data/20170223_165518_0e30_1B_AnalyticMS_297113.tiff"
 
 print zoneMapFile
-#(ndviCalcs, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile)
+(ndviCalcs, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile)
 
 print zoneMapFile2
 
 (ndviCalcs2, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile2)
 
 print zoneMapFile3
-#(ndviCalcs3, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile3)
+(ndviCalcs3, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile3)
 
 
 pprint("Completed")
