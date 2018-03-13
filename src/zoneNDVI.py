@@ -58,6 +58,26 @@ def calcNdvi(red, nir):
     """Calculate NDVI."""
     return ((nir - red) / (nir + red))*10000
 
+def createBandTiffs(tiffFile):
+    original = readTiff(tiffFile)
+
+    ndvi = calcNdvi(original[2], original[3])
+    tiffFileName = tiffFile.split('/')[2]
+    meta = getMeta(tiffFile)
+    meta.update(dtype=rasterio.uint16, count=1)
+
+    with rasterio.open("../data/output/{}_band{}.tiff".format(tiffFileName, "b"), 'w', **meta) as out:
+        out.write_band(1, original[0])
+    with rasterio.open("../data/output/{}_band{}.tiff".format(tiffFileName, "g"), 'w', **meta) as out:
+        out.write_band(1, original[1])
+    with rasterio.open("../data/output/{}_band{}.tiff".format(tiffFileName, "r"), 'w', **meta) as out:
+        out.write_band(1, original[2])
+    with rasterio.open("../data/output/{}_band{}.tiff".format(tiffFileName, "nir"), 'w', **meta) as out:
+        out.write_band(1, original[3])
+    with rasterio.open("../data/output/{}_band{}.tiff".format(tiffFileName, "ndvi"), 'w', **meta) as out:
+        out.write_band(1, ndvi)
+
+
 def generateNDVIPerZone(tiffFile, zoneMapFile):
     ndviZones = dict()
     ndviCalcs = dict()
@@ -113,6 +133,7 @@ def generateNDVIPerZone(tiffFile, zoneMapFile):
 zoneMapFile = "../data/(controller)_2017-08-30-2017-09-05__274501__Harvest/2017-08-30-2017-09-05__274502__Harvest__ZoneMap.tiff"
 tiffFile = "../data/20170217_215326_0c22_1B_AnalyticMS_274501.tiff"
 
+createBandTiffs(tiffFile)
 #(ndviCalcs, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile)
 
 zoneMapFile = "../data/(controller)_2017-09-13-2017-09-28__297113__Harvest/2017-09-13-2017-09-28__297114__Harvest__ZoneMap.tiff"
@@ -121,14 +142,14 @@ zoneMapFile3 = "../data/(controller)_2017-09-13-2017-09-28__297113__Harvest/2017
 tiffFile = "../data/20170223_165518_0e30_1B_AnalyticMS_297113.tiff"
 
 print zoneMapFile
-(ndviCalcs, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile)
+#(ndviCalcs, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile)
 
 print zoneMapFile2
 
-(ndviCalcs2, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile2)
+#(ndviCalcs2, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile2)
 
 print zoneMapFile3
-(ndviCalcs3, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile3)
+#(ndviCalcs3, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile3)
 
 
 pprint("Completed")
