@@ -132,8 +132,15 @@ def generateNDVIPerZone(tiffFile, zoneMapFile):
 
 zoneMapFile = "../data/(controller)_2017-08-30-2017-09-05__274501__Harvest/2017-08-30-2017-09-05__274502__Harvest__ZoneMap.tiff"
 tiffFile = "../data/20170217_215326_0c22_1B_AnalyticMS_274501.tiff"
-
+tiffFile = "../data/20170609_174033_1041_3B_AnalyticMS_TOA_clip_Cloudy_image.tif"
 createBandTiffs(tiffFile)
+
+tiffFile = "../data/20170609_174033_1041_3B_AnalyticMS_TOA_clip_Cloudy2.tif"
+createBandTiffs(tiffFile)
+
+tiffFile = "../data/20170609_174033_1041_3B_AnalyticMS_TOA_clip_cloudy3.tif"
+createBandTiffs(tiffFile)
+
 #(ndviCalcs, ndviZones) = generateNDVIPerZone(tiffFile, zoneMapFile)
 
 zoneMapFile = "../data/(controller)_2017-09-13-2017-09-28__297113__Harvest/2017-09-13-2017-09-28__297114__Harvest__ZoneMap.tiff"
